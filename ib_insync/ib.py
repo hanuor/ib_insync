@@ -20,7 +20,7 @@ from ib_insync.objects import (
     RealTimeBarList, ScanDataList, ScannerSubscription, SmartComponent,
     TagValue, TradeLogEntry, WshEventData)
 from ib_insync.order import (
-    BracketOrder, LimitOrder, Order, OrderState, OrderStatus, StopOrder, Trade)
+    MarketOrder, BracketOrder, LimitOrder, Order, OrderState, OrderStatus, StopOrder, Trade)
 from ib_insync.ticker import Ticker
 from ib_insync.wrapper import Wrapper
 
@@ -573,7 +573,49 @@ class IB:
             contracts: Contracts to qualify.
         """
         return self._run(self.qualifyContractsAsync(*contracts))
+        
+    def bracketMarketOrder(
+            self, action: str, quantity: float, takeProfitPrice: float,
+            stopLossPrice: float, **kwargs) -> BracketOrder:
+        """
+        Create a market bracket order that is bracketed by a take-profit order and
+        a stop-loss order. Submit the bracket like:
 
+        .. code-block:: python
+
+            for o in bracket:
+                ib.placeOrder(contract, o)
+
+        https://interactivebrokers.github.io/tws-api/bracket_order.html
+
+        Args:
+            action: 'BUY' or 'SELL'.
+            quantity: Size of order.
+            limitPrice: Limit price of entry order.
+            takeProfitPrice: Limit price of profit order.
+            stopLossPrice: Stop price of loss order.
+        """
+        assert action in ('BUY', 'SELL')
+        reverseAction = 'BUY' if action == 'SELL' else 'SELL'
+        parent = MarketOrder(
+            action, quantity,
+            orderId=self.client.getReqId(),
+            transmit=False,
+            **kwargs)
+        takeProfit = LimitOrder(
+            reverseAction, quantity, takeProfitPrice,
+            orderId=self.client.getReqId(),
+            transmit=False,
+            parentId=parent.orderId,
+            **kwargs)
+        stopLoss = StopOrder(
+            reverseAction, quantity, stopLossPrice,
+            orderId=self.client.getReqId(),
+            transmit=True,
+            parentId=parent.orderId,
+            **kwargs)
+        return BracketOrder(parent, takeProfit, stopLoss)
+                
     def bracketOrder(
             self, action: str, quantity: float,
             limitPrice: float, takeProfitPrice: float,
